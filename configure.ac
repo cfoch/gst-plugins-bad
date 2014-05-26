@@ -405,6 +405,7 @@ AG_GST_CHECK_PLUGIN(removesilence)
 AG_GST_CHECK_PLUGIN(sdi)
 AG_GST_CHECK_PLUGIN(sdp)
 AG_GST_CHECK_PLUGIN(segmentclip)
+AG_GST_CHECK_PLUGIN(sequences)
 AG_GST_CHECK_PLUGIN(siren)
 AG_GST_CHECK_PLUGIN(smooth)
 AG_GST_CHECK_PLUGIN(speed)
@@ -3221,6 +3222,7 @@ gst/removesilence/Makefile
 gst/sdi/Makefile
 gst/sdp/Makefile
 gst/segmentclip/Makefile
+gst/sequences/Makefile
 gst/siren/Makefile
 gst/smooth/Makefile
 gst/speed/Makefile
