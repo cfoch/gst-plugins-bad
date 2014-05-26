@@ -232,6 +232,7 @@ check_PROGRAMS = \
 	elements/h263parse \
 	elements/h264parse \
 	elements/mpegtsmux \
+	elements/imagesequencesrc \
 	elements/mpegvideoparse \
 	elements/mpeg4videoparse \
 	$(check_mpg123) \
@@ -380,6 +381,9 @@ elements_assrender_LDADD = $(GST_PLUGINS_BASE_LIBS) -lgstvideo-$(GST_API_VERSION
 
 elements_mpegtsmux_CFLAGS = $(GST_PLUGINS_BASE_CFLAGS) $(GST_BASE_CFLAGS) $(AM_CFLAGS)
 elements_mpegtsmux_LDADD = $(GST_PLUGINS_BASE_LIBS) -lgstvideo-$(GST_API_VERSION) $(GST_BASE_LIBS) $(LDADD)
+
+elements_imagesequencesrc_CFLAGS = $(GST_PLUGINS_BASE_CFLAGS) $(GST_BASE_CFLAGS) $(AM_CFLAGS)
+elements_imagesequencesrc_LDADD = $(GST_PLUGINS_BASE_LIBS) -lgstvideo-$(GST_API_VERSION) $(GST_BASE_LIBS) $(GIO_LIBS) $(LDADD)
 
 elements_mpg123audiodec_CFLAGS = $(GST_PLUGINS_BASE_CFLAGS) $(GST_BASE_CFLAGS) $(AM_CFLAGS)
 elements_mpg123audiodec_LDADD = \
