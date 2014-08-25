@@ -674,7 +674,7 @@ gst_imagesequencesrc_get_property (GObject * object, guint property_id,
       }
       filenames[size] = NULL;
 
-      g_value_set_boxed (value, filenames);
+      g_value_set_static_boxed (value, filenames);
       break;
     }
       break;
