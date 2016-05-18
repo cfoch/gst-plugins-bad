@@ -86,7 +86,7 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("{BGRA}")));
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("{BGRA, RGB}")));
 
 #define gst_face_overlay_parent_class parent_class
 G_DEFINE_TYPE (GstFaceOverlay, gst_face_overlay, GST_TYPE_BIN);
@@ -104,31 +104,25 @@ static gboolean gst_face_overlay_create_children (GstFaceOverlay * filter);
 static gboolean
 gst_face_overlay_create_children (GstFaceOverlay * filter)
 {
-  GstElement *csp, *face_detect, *overlay;
   GstPad *pad;
 
-  csp = gst_element_factory_make ("videoconvert", NULL);
-  face_detect = gst_element_factory_make ("facedetect", NULL);
-  overlay = gst_element_factory_make ("rsvgoverlay", NULL);
+  filter->face_detect = gst_element_factory_make ("facedetect", NULL);
+  /* overlay = gst_element_factory_make ("rsvgoverlay", NULL); */
 
   /* FIXME: post missing-plugin messages on NULL->READY if needed */
-  if (csp == NULL || face_detect == NULL || overlay == NULL)
+  if (filter->face_detect == NULL)
     goto missing_element;
 
-  g_object_set (face_detect, "display", FALSE, NULL);
+  g_object_set (filter->face_detect, "display", FALSE, NULL);
 
-  gst_bin_add_many (GST_BIN (filter), face_detect, csp, overlay, NULL);
-  filter->svg_overlay = overlay;
+  gst_bin_add (GST_BIN (filter), filter->face_detect);
 
-  if (!gst_element_link_many (face_detect, csp, overlay, NULL))
-    GST_ERROR_OBJECT (filter, "couldn't link elements");
-
-  pad = gst_element_get_static_pad (face_detect, "sink");
+  pad = gst_element_get_static_pad (filter->face_detect, "sink");
   if (!gst_ghost_pad_set_target (GST_GHOST_PAD (filter->sinkpad), pad))
     GST_ERROR_OBJECT (filter->sinkpad, "couldn't set sinkpad target");
   gst_object_unref (pad);
 
-  pad = gst_element_get_static_pad (overlay, "src");
+  pad = gst_element_get_static_pad (filter->face_detect, "src");
   if (!gst_ghost_pad_set_target (GST_GHOST_PAD (filter->srcpad), pad))
     GST_ERROR_OBJECT (filter->srcpad, "couldn't set srcpad target");
   gst_object_unref (pad);
@@ -139,20 +133,10 @@ gst_face_overlay_create_children (GstFaceOverlay * filter)
 missing_element:
   {
     /* clean up */
-    if (csp == NULL)
-      GST_ERROR_OBJECT (filter, "videoconvert element not found");
-    else
-      gst_object_unref (csp);
-
-    if (face_detect == NULL)
+    if (filter->face_detect == NULL)
       GST_ERROR_OBJECT (filter, "facedetect element not found (opencv plugin)");
     else
-      gst_object_unref (face_detect);
-
-    if (overlay == NULL)
-      GST_ERROR_OBJECT (filter, "rsvgoverlay element not found (rsvg plugin)");
-    else
-      gst_object_unref (overlay);
+      gst_object_unref (filter->face_detect);
 
     return FALSE;
   }
@@ -166,12 +150,6 @@ gst_face_overlay_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (filter->svg_overlay == NULL) {
-        GST_ELEMENT_ERROR (filter, CORE, MISSING_PLUGIN, (NULL),
-            ("Some required plugins are missing, probably either the opencv "
-                "facedetect element or rsvgoverlay"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
       filter->update_svg = TRUE;
       break;
     default:
@@ -188,15 +166,109 @@ gst_face_overlay_change_state (GstElement * element, GstStateChange transition)
   return ret;
 }
 
+static GstPadProbeReturn
+event_probe_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstFaceOverlay *filter;
+
+  filter = GST_FACEOVERLAY (user_data);
+
+  GST_DEBUG_OBJECT (pad, "Event probe");
+
+  if (GST_EVENT_TYPE (GST_PAD_PROBE_INFO_DATA (info)) != GST_EVENT_EOS)
+    return GST_PAD_PROBE_PASS;
+
+  gst_pad_remove_probe (pad, GST_PAD_PROBE_INFO_ID (info));
+
+
+  return GST_PAD_PROBE_DROP;
+
+  if (filter->old_overlays) {
+    GST_DEBUG_OBJECT (filter, "Remove old overlays in filter");
+    gst_element_set_state (filter->old_overlays, GST_STATE_NULL);
+    gst_bin_remove (GST_BIN (filter), filter->old_overlays);
+    filter->old_overlays = NULL;
+  }
+
+  GST_DEBUG_OBJECT (filter, "Adding overlays to filter");
+
+  gst_bin_add (GST_BIN (filter), filter->overlays);
+  gst_element_link_many (filter->face_detect, filter->overlays, NULL);
+  gst_element_set_state (filter->overlays, GST_STATE_PLAYING);
+
+  pad = gst_element_get_static_pad (filter->face_detect, "sink");
+  if (!gst_ghost_pad_set_target (GST_GHOST_PAD (filter->sinkpad), pad))
+    GST_ERROR_OBJECT (filter->srcpad, "couldn't set sinkpad target");
+  gst_object_unref (pad);
+
+  pad = gst_element_get_static_pad (filter->overlays, "src");
+  if (!gst_ghost_pad_set_target (GST_GHOST_PAD (filter->srcpad), pad))
+    GST_ERROR_OBJECT (filter->srcpad, "couldn't set srcpad target");
+  gst_object_unref (pad);
+
+  return GST_PAD_PROBE_DROP;
+}
+
+static GstPadProbeReturn
+pad_probe_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstPad *srcpad, *sinkpad;
+  GstFaceOverlay *filter;
+
+  filter = GST_FACEOVERLAY (user_data);
+
+  GST_DEBUG_OBJECT (pad, "Pad is blocked now");
+
+  /* remove the probe first */
+  gst_pad_remove_probe (pad, GST_PAD_PROBE_INFO_ID (info));
+
+
+  if (filter->old_overlays) {
+    /* install new probe for EOS */
+
+    srcpad = gst_element_get_static_pad (filter->old_overlays, "src");
+    gst_pad_add_probe (srcpad, GST_PAD_PROBE_TYPE_BLOCK |
+        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, event_probe_cb, user_data, NULL);
+    gst_object_unref (srcpad);
+
+
+    /* push EOS into the element, the probe will be fired when the
+     * EOS leaves the effect and it has thus drained all of its data */
+
+    sinkpad = gst_element_get_static_pad (filter->old_overlays, "sink");
+    gst_pad_send_event (sinkpad, gst_event_new_eos ());
+    gst_object_unref (sinkpad);
+  } else {
+    srcpad = gst_element_get_static_pad (filter->face_detect, "src");
+    gst_pad_add_probe (srcpad, GST_PAD_PROBE_TYPE_BLOCK |
+        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, event_probe_cb, user_data, NULL);
+    gst_object_unref (srcpad);
+
+
+    /* push EOS into the element, the probe will be fired when the
+     * EOS leaves the effect and it has thus drained all of its data */
+
+    sinkpad = gst_element_get_static_pad (filter->face_detect, "sink");
+    gst_pad_send_event (sinkpad, gst_event_new_eos ());
+    gst_object_unref (sinkpad);
+  }
+
+  return GST_PAD_PROBE_OK;
+}
+
 static void
 gst_face_overlay_handle_faces (GstFaceOverlay * filter, const GstStructure * s)
 {
+  GstPad *blockpad, *pad;
+  GstElement *overlays, *prev = NULL;
   guint x, y, width, height;
   gint svg_x, svg_y, svg_width, svg_height;
   const GstStructure *face;
   const GValue *faces_list, *face_val;
   gchar *new_location = NULL;
-  gint face_count;
+  gint face_count, i;
+
+  blockpad = filter->srcpad;
 
 #if 0
   /* optionally draw the image once every two messages for better performance */
@@ -205,59 +277,97 @@ gst_face_overlay_handle_faces (GstFaceOverlay * filter, const GstStructure * s)
     return;
 #endif
 
+  /* The last face in the list seems to be the right one, objects mistakenly
+   * detected as faces for a couple of frames seem to be in the list
+   * beginning. TODO: needs confirmation. */
+
   faces_list = gst_structure_get_value (s, "faces");
   face_count = gst_value_list_get_size (faces_list);
   GST_LOG_OBJECT (filter, "face count: %d", face_count);
 
   if (face_count == 0) {
-    GST_DEBUG_OBJECT (filter, "no face, clearing overlay");
-    g_object_set (filter->svg_overlay, "location", NULL, NULL);
     GST_OBJECT_LOCK (filter);
     filter->update_svg = TRUE;
     GST_OBJECT_UNLOCK (filter);
     return;
   }
 
-  /* The last face in the list seems to be the right one, objects mistakenly
-   * detected as faces for a couple of frames seem to be in the list
-   * beginning. TODO: needs confirmation. */
-  face_val = gst_value_list_get_value (faces_list, face_count - 1);
-  face = gst_value_get_structure (face_val);
-  gst_structure_get_uint (face, "x", &x);
-  gst_structure_get_uint (face, "y", &y);
-  gst_structure_get_uint (face, "width", &width);
-  gst_structure_get_uint (face, "height", &height);
+  overlays = gst_bin_new ("overlays");
 
-  /* Apply x and y offsets relative to face position and size.
-   * Set image width and height as a fraction of face width and height.
-   * Cast to int since face position and size will never be bigger than
-   * G_MAX_INT and we may have negative values as svg_x or svg_y */
+  for (i = 0; i < face_count; i++) {
+    GstElement *overlay, *converter;
 
-  GST_OBJECT_LOCK (filter);
+    converter = gst_element_factory_make ("videoconvert", NULL);
+    overlay = gst_element_factory_make ("rsvgoverlay", NULL);
 
-  svg_x = (gint) x + (gint) (filter->x * width);
-  svg_y = (gint) y + (gint) (filter->y * height);
+    face_val = gst_value_list_get_value (faces_list, i);
+    face = gst_value_get_structure (face_val);
+    gst_structure_get_uint (face, "x", &x);
+    gst_structure_get_uint (face, "y", &y);
+    gst_structure_get_uint (face, "width", &width);
+    gst_structure_get_uint (face, "height", &height);
 
-  svg_width = (gint) (filter->w * width);
-  svg_height = (gint) (filter->h * height);
+    /* Apply x and y offsets relative to face position and size.
+     * Set image width and height as a fraction of face width and height.
+     * Cast to int since face position and size will never be bigger than
+     * G_MAX_INT and we may have negative values as svg_x or svg_y */
 
-  if (filter->update_svg) {
+    GST_OBJECT_LOCK (filter);
+
+    svg_x = (gint) x + (gint) (filter->x * width);
+    svg_y = (gint) y + (gint) (filter->y * height);
+
+    svg_width = (gint) (filter->w * width);
+    svg_height = (gint) (filter->h * height);
+
     new_location = g_strdup (filter->location);
-    filter->update_svg = FALSE;
-  }
-  GST_OBJECT_UNLOCK (filter);
 
-  if (new_location != NULL) {
+    GST_OBJECT_UNLOCK (filter);
+
+    GST_LOG_OBJECT (filter, "overlay dimensions: %d x %d @ %d,%d",
+        svg_width, svg_height, svg_x, svg_y);
+
+
     GST_DEBUG_OBJECT (filter, "set rsvgoverlay location=%s", new_location);
-    g_object_set (filter->svg_overlay, "location", new_location, NULL);
-    g_free (new_location);
+    g_object_set (overlay, "location", new_location, NULL);
+
+    g_object_set (overlay, "location", filter->location,
+        "x", svg_x, "y", svg_y, "width", svg_width, "height", svg_height, NULL);
+
+    gst_bin_add_many (GST_BIN (overlays), converter, overlay, NULL);
+
+    if (prev) {
+      if (!gst_element_link_many (prev, converter, overlay, NULL))
+        GST_ERROR_OBJECT (filter, "Link error.");
+    } else {
+      if (!gst_element_link (converter, overlay))
+        GST_ERROR_OBJECT (filter, "Link error.");
+    }
+
+    prev = overlay;
+
+    if (i == 0) {
+      pad = gst_element_get_static_pad (converter, "sink");
+      if (!gst_element_add_pad (overlays, gst_ghost_pad_new ("sink", pad)))
+        GST_ERROR_OBJECT (filter->sinkpad,
+            "couldn't set sinkpad as ghost pad to overlays bin");
+      gst_object_unref (pad);
+    }
+    if (i == face_count - 1) {
+      pad = gst_element_get_static_pad (overlay, "src");
+      if (!gst_element_add_pad (overlays, gst_ghost_pad_new ("src", pad)))
+        GST_ERROR_OBJECT (filter->sinkpad,
+            "couldn't set srcpad as ghost pad to overlays bin");
+      gst_object_unref (pad);
+    }
   }
 
-  GST_LOG_OBJECT (filter, "overlay dimensions: %d x %d @ %d,%d",
-      svg_width, svg_height, svg_x, svg_y);
+  g_assert (filter->old_overlays == NULL);
+  filter->old_overlays = filter->overlays;
+  filter->overlays = overlays;
 
-  g_object_set (filter->svg_overlay,
-      "x", svg_x, "y", svg_y, "width", svg_width, "height", svg_height, NULL);
+  gst_pad_add_probe (blockpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+      pad_probe_cb, filter, NULL);
 }
 
 static void
@@ -335,7 +445,8 @@ gst_face_overlay_init (GstFaceOverlay * filter)
   filter->y = 0;
   filter->w = 1;
   filter->h = 1;
-  filter->svg_overlay = NULL;
+  filter->overlays = NULL;
+  filter->old_overlays = NULL;
   filter->location = NULL;
   filter->process_message = TRUE;
 

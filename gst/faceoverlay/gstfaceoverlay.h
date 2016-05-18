@@ -69,7 +69,8 @@ struct _GstFaceOverlay
 
   GstElement *face_detect;
   GstElement *colorspace;
-  GstElement *svg_overlay;
+  GstElement *overlays;
+  GstElement *old_overlays;
 
   gboolean process_message;
 
