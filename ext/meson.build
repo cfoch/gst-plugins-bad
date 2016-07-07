@@ -1,3 +1,4 @@
+subdir('assimp')
 subdir('assrender')
 subdir('aom')
 #subdir('bs2b')

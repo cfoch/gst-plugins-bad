@@ -412,6 +412,12 @@ else
 TTML_DIR=
 endif
 
+if USE_ASSIMP
+ASSIMP_DIR=assimp
+else
+ASSIMP_DIR=
+endif
+
 SUBDIRS=\
 	$(VOAACENC_DIR) \
 	$(ASSRENDER_DIR) \
@@ -482,7 +488,8 @@ SUBDIRS=\
 	$(DTLS_DIR) \
 	$(VULKAN_DIR) \
 	$(WEBRTCDSP_DIR) \
-	$(TTML_DIR)
+	$(TTML_DIR) \
+	$(ASSIMP_DIR)
 
 DIST_SUBDIRS = \
 	assrender \
@@ -551,6 +558,7 @@ DIST_SUBDIRS = \
 	dtls \
 	vulkan \
 	webrtcdsp \
-	ttml
+	ttml \
+	assimp
 
 include $(top_srcdir)/common/parallel-subdirs.mak

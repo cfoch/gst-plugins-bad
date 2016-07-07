@@ -50,7 +50,12 @@ libgstopenglmixers_la_LIBADD = \
 	$(GST_CONTROLLER_LIBS) \
 	$(GST_LIBS) \
 	$(GL_LIBS) \
-	$(LIBM)
+	$(GRAPHENE_LIBS) \
+	-lassimp
+
+libgstopengl_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
+libgstopengl_la_LIBTOOLFLAGS = --tag=CC
+
 
 libgstopenglmixers_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstopenglmixers_la_LIBTOOLFLAGS = --tag=CC
