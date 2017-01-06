@@ -48,6 +48,11 @@
 #include "gstglvideomixer.h"
 #include "gstglstereomix.h"
 
+#if HAVE_GRAPHENE
+#include "gstgltransformation.h"
+#include "gstglvideoflip.h"
+#endif
+
 #if GST_GL_HAVE_OPENGL
 #include "gstglmosaic.h"
 #endif /* GST_GL_HAVE_OPENGL */

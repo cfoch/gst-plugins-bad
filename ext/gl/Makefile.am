@@ -9,7 +9,8 @@ libgstopenglmixers_la_SOURCES = \
 	gstglmixerbin.c \
 	gstglstereomix.c \
 	gstglutils.c \
-	gstglvideomixer.c
+	gstglvideomixer.c \
+	gstglmodelrender.c
 
 noinst_HEADERS = \
 	gstglbasemixer.h \
@@ -18,7 +19,8 @@ noinst_HEADERS = \
 	gstglmixerbin.h \
 	gstglstereomix.h \
 	gstglutils.h \
-	gstglvideomixer.h
+	gstglvideomixer.h \
+	gstglmodelrender.h
 
 # full opengl required
 if USE_OPENGL
@@ -43,6 +45,7 @@ libgstopenglmixers_la_LIBADD = \
 	$(top_builddir)/gst-libs/gst/video/libgstbadvideo-@GST_API_VERSION@.la \
 	$(GST_GL_LIBS) \
 	$(GST_PLUGINS_BASE_LIBS) \
+	$(top_builddir)/gst-libs/gst/3d/libgst3d-$(GST_API_VERSION).la \
 	$(GST_BASE_LIBS) \
 	$(GST_CONTROLLER_LIBS) \
 	$(GST_LIBS) \
